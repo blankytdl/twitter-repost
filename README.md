@@ -1,4 +1,4 @@
-# X → Telegram bot (Rust, free, Render Free)
+# X → Telegram bot (Rust, host-server deployment)
 
 Forwards X (Twitter) posts to a Telegram channel with native photos, albums, videos and GIFs. **No
 paid X API.** It is built from your `reddit-to-telegram` bot and reuses its Lightpanda browser
@@ -16,14 +16,14 @@ Two sources, usable together:
 In both cases each post's text, likes and media come from the free FxEmbed API, so the browser part only has
 to find post ids. That keeps the page-scraping code tiny.
 
-> **Status: tested against a fake X, never against the real one.** 66 automated tests pass, including
+> **Status: tested against a fake X, never against the real one.** The existing automated suite covers
 > ones that drive the **real Lightpanda 1.0.3** against a fake x.com page that renders its timeline with
 > JavaScript after a delay, swaps the list while scrolling (like X's virtualised timeline), opens on the
 > Following tab, shows ads, a login wall and an error page, and checks that your cookies reach the page.
 > Also tested: about 230,000 random inputs thrown at every parser (no panics), recovery after a browser fetch is cancelled mid-flight, and end-to-end flows against fake RSS / FxEmbed / Telegram servers, and the real
 > binary (seeding, delivery, `/health`, graceful shutdown, `check`). **Not tested:** the real x.com (I
 > can't reach it from my sandbox), live Nitter instances, a real Telegram channel, the Docker
-> build and Render. Whether Lightpanda can run X's real JavaScript is the biggest unknown. Run
+> build and host deployment. Whether Lightpanda can run X's real JavaScript is the biggest unknown. Run
 > `x-telegram-bot check` first.
 
 ## Getting your cookies (For you feed)
@@ -113,7 +113,7 @@ CI (`.github/workflows/rust-ci.yml`) downloads the pinned Lightpanda and runs al
 | `cannot start browser` | `BROWSER_BIN` path is wrong |
 | `all RSS sources failed` | Add more `RSS_SOURCES` or self-host |
 | `telegram error 400: chat not found` | Wrong chat id, or the bot isn't a channel admin |
-| Stops posting after a while | Render spun it down: add the external uptime monitor |
+| Stops posting after a while | Check host logs, polling errors and whether the host stopped or restarted the service |
 
 ## Layout
 `x_browser.rs` (Lightpanda/CDP client and For-you scanner), `x_source.rs` (RSS + FxEmbed), `deliver.rs` (captions, photos, albums, videos),
