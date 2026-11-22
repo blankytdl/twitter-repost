@@ -1,5 +1,5 @@
 //! Free X data sources (no X API, no keys):
-//!   * discovery: Nitter-style RSS feeds (`<instance>/<user>/rss`), several instances with fallback;
+//!   * discovery: configurable RSS URL templates (FxTwitter `/{user}/feed.xml` or Nitter `/{user}/rss`);
 //!   * details:   the FxEmbed JSON API (`api.fxtwitter.com/<user>/status/<id>`).
 //! Both are unofficial third-party services and can stop working at any time.
 use anyhow::{anyhow, bail, Result};
@@ -115,7 +115,19 @@ pub fn parse_rss(xml: &str) -> Result<Vec<FeedItem>> {
     Ok(out)
 }
 
-/// RSS instances in priority order; the one that worked last is tried first.
+/// Resolve an RSS source. Explicit {handle}/{user} templates support different feed URL
+/// layouts; a bare host keeps the historical Nitter /<handle>/rss behaviour.
+fn feed_url(source: &str, account: &str) -> String {
+    if source.contains("{handle}") {
+        source.replace("{handle}", account)
+    } else if source.contains("{user}") {
+        source.replace("{user}", account)
+    } else {
+        format!("{}/{}/rss", source.trim_end_matches('/'), account)
+    }
+}
+
+/// RSS sources in priority order; the one that worked last is tried first.
 pub struct Sources {
     client: Client,
     bases: Vec<String>,
@@ -146,7 +158,7 @@ impl Sources {
         let mut last = String::from("no sources");
         let mut empty_ok = false; // someone answered with a valid but empty feed
         for pos in 0..self.bases.len() {
-            let url = format!("{}/{}/rss", self.bases[pos], account);
+            let url = feed_url(&self.bases[pos], account);
             match self.try_one(&url).await {
                 // Blocked or rate-limited instances often answer with an empty feed: ask the next one too.
                 Ok(items) if items.is_empty() => empty_ok = true,
@@ -157,7 +169,7 @@ impl Sources {
                     }
                     return Ok(items);
                 }
-                Err(e) => last = format!("{}: {e:#}", self.bases[pos]),
+                Err(e) => last = format!("{url}: {e:#}"),
             }
         }
         if empty_ok {
@@ -338,6 +350,20 @@ mod tests {
                 FeedItem { handle: "web".into(), id: "333".into(), reposter: None },
             ]
         );
+    }
+
+    #[test]
+    fn resolves_fxtwitter_and_nitter_source_templates() {
+        assert_eq!(
+            feed_url("https://fxtwitter.com/{handle}/feed.xml", "NASA"),
+            "https://fxtwitter.com/NASA/feed.xml"
+        );
+        assert_eq!(
+            feed_url("https://nitter.example/{user}/rss", "SpaceX"),
+            "https://nitter.example/SpaceX/rss"
+        );
+        // Existing deployments that specify only a Nitter host remain compatible.
+        assert_eq!(feed_url("https://xcancel.com", "esa"), "https://xcancel.com/esa/rss");
     }
 
     #[test]
