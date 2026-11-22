@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: x-telegram-bot
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # Secrets (enter them in the Render dashboard)
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+      - key: GITHUB_STATE_BRANCH
+        value: bot-state
+      # What to forward: comma list of X usernames, all sent to DEFAULT_CHAT_ID unless written as name=@otherchat
+      - key: DEFAULT_CHAT_ID
+        sync: false
+      - key: X_ACCOUNTS
+        sync: false
+      # "For you" feed through the headless browser (set FOR_YOU=true and fill both cookies)
+      - key: FOR_YOU
+        value: "false"
+      - key: X_AUTH_TOKEN
+        sync: false
+      - key: X_CT0
+        sync: false
+      # Free sources (Nitter-style RSS instances, tried in order)
+      - key: RSS_SOURCES
+        value: https://xcancel.com
+      # Tuning (all optional)
+      - key: POLL_INTERVAL_SECS
+        value: "300"
+      - key: MEDIA_ONLY
+        value: "true"
+      - key: SELF_PING_INTERVAL_SECS
+        value: "600"
