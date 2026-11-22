@@ -51,6 +51,8 @@ Locally you also need the Lightpanda binary (`BROWSER_BIN`); the Docker image in
 - Skips ads, replies (default) and text-only posts (`MEDIA_ONLY=true`, default). Never sends posts older than `MAX_AGE_HOURS` (default 24); in an account feed a *repost* made now counts as new even if the original is older.
 - The For you feed is algorithmic, so many of its posts are old; with the default 24 h limit those are marked seen and skipped. Its per-cycle budget (`FOR_YOU_MAX_NEW`) goes to the **newest** posts first; account feeds go out oldest first.
 - The "seen" memory is sized automatically so it always covers the age window (an evicted id would otherwise be re-sent); `SEEN_CAP` can only raise it.
+- Structured logs are written to the service console and a separate `LOG_PATH` file. The file rotates at 5 MiB and retains one previous log; the default is `/tmp/xtb-logs/bot.log`.
+- `/health` reports the current stage (fetching an RSS feed, reading For you, fetching a post, sending media, saving state or waiting for the next poll). During idle periods the scheduler emits a 60-second countdown heartbeat without making extra X/RSS requests.
 - Remembers what it sent (per channel) in a local file plus a backup on a GitHub branch. Failures are sorted into two kinds. *Temporary* ones (network errors, 5xx, Telegram flood limits / 429, FxEmbed outages) keep the order, stop the cycle for that source and are retried for up to 10 cycles, so an outage doesn't lose posts. *Permanent* ones (Telegram 4xx, a 404 media file) don't hold up the other posts and are given up after 3 cycles.
 - If every account feed fails (RSS instances down or blocking) it backs off 5 min, doubling up to 1 h. The For-you source backs off on its own the same way after a login wall, X error or timeout, so a bad cookie is not retried every cycle and the account feeds are not slowed down. Both recover by themselves.
 
@@ -70,6 +72,7 @@ See `.env.example` for everything with defaults. The important ones:
 | `INSENSITIVE_X` | `true` (default): the browser runs two MIT userscripts on every X page: AgebypassX (Saganaki22; patches X's age-gate / sensitive-warning feature switches) and InsensitiveX (Alican Aktas; strips sensitive flags and tombstones from API answers). Works in Lightpanda and Chromium without any extension |
 | `BROWSER_KIND`, `BROWSER_BIN` | `lightpanda` (default) or `chromium` |
 | `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_STATE_BRANCH` | Durable state backup (recommended on Render Free) |
+| `LOG_PATH` | Rotating log file path (default `/tmp/xtb-logs/bot.log`); console logging remains enabled |
 
 ## Deploy on Render (free)
 1. Put this folder in a GitHub repo (it contains `Dockerfile` and `render.yaml`).
@@ -110,5 +113,5 @@ CI (`.github/workflows/rust-ci.yml`) downloads the pinned Lightpanda and runs al
 
 ## Layout
 `x_browser.rs` (Lightpanda/CDP client and For-you scanner), `x_source.rs` (RSS + FxEmbed), `deliver.rs` (captions, photos, albums, videos),
-`scheduler.rs` (cycles, retries, filters), `config.rs`, `seen_store.rs` (state + GitHub backup), `telegram.rs`, `media_downloader.rs`,
-`health.rs`, `self_ping.rs`, `testutil.rs` (fake servers and fake x.com for tests).
+`scheduler.rs` (cycles, retries, filters and idle heartbeats), `config.rs`, `seen_store.rs` (state + GitHub backup), `telegram.rs`, `media_downloader.rs`,
+`health.rs` (`/health` stage and stall status), `self_ping.rs`, `testutil.rs` (fake servers and fake x.com for tests).

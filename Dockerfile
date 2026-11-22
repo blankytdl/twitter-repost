@@ -27,5 +27,6 @@ USER bot
 ENV BROWSER_BIN=/usr/local/bin/lightpanda \
     LIGHTPANDA_DISABLE_TELEMETRY=true \
     STATE_PATH=/tmp/xtb-state/seen.json \
+    LOG_PATH=/tmp/xtb-logs/bot.log \
     RUST_LOG=info
 CMD ["x-telegram-bot"]

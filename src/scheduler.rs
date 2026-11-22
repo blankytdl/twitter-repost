@@ -93,6 +93,7 @@ impl Scheduler {
             if self.token.is_cancelled() {
                 break;
             }
+            self.health.set_stage("cycle starting", 0);
             let started = Instant::now();
             // On SIGTERM give the cycle 20 s to wrap up (Render kills after ~30 s), then
             // abandon it so the final state flush still happens.
@@ -113,11 +114,24 @@ impl Scheduler {
             self.cycles += 1;
             self.health.cycle_done();
             let wait = self.cfg.interval.saturating_sub(started.elapsed()).max(Duration::from_secs(30)) + self.penalty;
-            self.health.beat(wait.as_secs());
+            self.health.set_stage("idle until next poll", wait.as_secs());
             info!(next_in_secs = wait.as_secs(), "cycle finished");
-            tokio::select! {
-                _ = self.token.cancelled() => break,
-                _ = sleep(wait) => {}
+            // Console heartbeat only; no extra X/RSS requests or state writes.
+            let mut remaining = wait;
+            while !remaining.is_zero() {
+                let tick = remaining.min(Duration::from_secs(60));
+                tokio::select! {
+                    _ = self.token.cancelled() => break,
+                    _ = sleep(tick) => {
+                        remaining = remaining.saturating_sub(tick);
+                        if !remaining.is_zero() {
+                            info!(next_in_secs = remaining.as_secs(), "waiting for next poll");
+                        }
+                    }
+                }
+            }
+            if self.token.is_cancelled() {
+                break;
             }
         }
         info!("shutting down: flushing state");
@@ -148,7 +162,7 @@ impl Scheduler {
                 sleep(cfg.request_gap).await;
             }
             let t0 = Instant::now();
-            self.health.beat(0);
+            self.health.set_stage(&format!("fetching RSS feed for @{}", acc.handle), 0);
             attempted += 1;
             if let Err(e) = self.process_account(acc).await {
                 failed += 1;
@@ -165,7 +179,7 @@ impl Scheduler {
                     info!(retry_in_secs = t.saturating_duration_since(Instant::now()).as_secs(), "For you is backing off after a failure");
                 }
                 _ => {
-                    self.health.beat(0);
+                    self.health.set_stage("fetching the For you timeline", 0);
                     match self.process_for_you().await {
                         Ok(()) => {
                             self.fy_backoff = Duration::ZERO;
@@ -181,6 +195,7 @@ impl Scheduler {
             }
         }
 
+        self.health.set_stage("saving seen-post state", 0);
         self.store.flush().await;
         // Every account feed failed: the RSS instances are probably down or blocking us, so back off.
         // (The For-you source has its own backoff above and must not slow the account feeds.)
@@ -219,6 +234,7 @@ impl Scheduler {
 
     /// Shared by account feeds and the For-you feed. `label` identifies the source for seeding.
     async fn process_items(&mut self, chat: &str, label: &str, items: Vec<FeedItem>, max_new: usize, for_you: bool) {
+        self.health.set_stage(&format!("processing {} posts from {label}", items.len()), 0);
         let known = self.store.sub_known(chat, label);
 
         if !known && !self.cfg.send_backlog {
@@ -308,6 +324,7 @@ impl Scheduler {
             self.mark_seen(chat, &it.id);
             return Next::Continue;
         }
+        self.health.set_stage(&format!("fetching details for X post {}", it.id), 0);
         let post = match fetch_post(&self.http, &cfg.fx_base, &it.handle, &it.id, it.reposter.clone()).await {
             Ok(Some(p)) => p,
             Ok(None) => {
@@ -328,6 +345,7 @@ impl Scheduler {
             }
             return Next::Wait;
         }
+        self.health.set_stage(&format!("sending X post {}", it.id), 0);
         match self.deliverer.deliver(chat, &post).await {
             Ok(()) => {
                 self.mark_seen(chat, &it.id);

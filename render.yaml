@@ -37,3 +37,5 @@ services:
         value: "true"
       - key: SELF_PING_INTERVAL_SECS
         value: "600"
+      - key: LOG_PATH
+        value: /tmp/xtb-logs/bot.log
