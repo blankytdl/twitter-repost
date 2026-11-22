@@ -10,14 +10,6 @@ pub struct Account {
     pub chat_id: String,
 }
 
-#[derive(Clone)]
-pub struct GithubSettings {
-    pub token: String,
-    pub repo: String,
-    pub branch: String,
-    pub api_base: String,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BrowserKind {
     Lightpanda,
@@ -67,7 +59,6 @@ pub struct Config {
     pub user_agent: String,
     pub telegram_token: String,
     pub telegram_base: String,
-    pub github: Option<GithubSettings>,
     pub state_path: PathBuf,
     pub port: u16,
     pub self_ping: Option<(String, Duration)>,
@@ -225,17 +216,6 @@ impl Config {
 
         let telegram_token = get("TELEGRAM_BOT_TOKEN").ok_or_else(|| anyhow!("TELEGRAM_BOT_TOKEN is required"))?;
 
-        let github = match (get("GITHUB_TOKEN"), get("GITHUB_REPO")) {
-            (Some(token), Some(repo)) => Some(GithubSettings {
-                token,
-                repo,
-                branch: s(get, "GITHUB_STATE_BRANCH", "bot-state"),
-                api_base: s(get, "GITHUB_API_BASE", "https://api.github.com"),
-            }),
-            (None, None) => None,
-            _ => bail!("GITHUB_TOKEN and GITHUB_REPO must be set together"),
-        };
-
         let rss_sources: Vec<String> = list(&s(get, "RSS_SOURCES", "https://xcancel.com"))
             .into_iter()
             .map(|u| u.trim_end_matches('/').to_string())
@@ -282,8 +262,7 @@ impl Config {
             user_agent: s(get, "USER_AGENT", DEFAULT_UA),
             telegram_token,
             telegram_base: s(get, "TELEGRAM_API_BASE", "https://api.telegram.org").trim_end_matches('/').to_string(),
-            github,
-            state_path: PathBuf::from(s(get, "STATE_PATH", "/tmp/xtb-state/seen.json")),
+            state_path: get("STATE_PATH").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(s(get, "DATA_DIR", "/data")).join("seen.json")),
             port: num(get, "PORT", 10000u16)?,
             self_ping,
             max_upload_bytes: num(get, "MAX_UPLOAD_BYTES", 50u64 * 1024 * 1024)?.min(50 * 1024 * 1024),
@@ -337,7 +316,7 @@ mod tests {
         assert!(c.media_only && !c.include_replies && c.include_reposts && c.captions);
         assert_eq!(c.rss_sources, vec!["https://xcancel.com"]);
         assert_eq!(c.fx_base, "https://api.fxtwitter.com");
-        assert!(c.github.is_none() && c.self_ping.is_none() && !c.allow_http_media);
+        assert!(c.self_ping.is_none() && !c.allow_http_media);
         assert_eq!(c.max_age.as_secs(), 86400);
     }
 
@@ -354,7 +333,6 @@ mod tests {
         assert!(with(&[("X_ACCOUNTS", "averyveryverylongusername")]).is_err());
         assert!(cfg(&[("TELEGRAM_BOT_TOKEN", "x"), ("X_ACCOUNTS", "nasa")], true).is_err()); // no chat
         assert!(cfg(&[("DEFAULT_CHAT_ID", "@c"), ("X_ACCOUNTS", "nasa")], true).is_err()); // no token
-        assert!(with(&[("X_ACCOUNTS", "nasa"), ("GITHUB_TOKEN", "t")]).is_err()); // half a github config
         assert!(with(&[("X_ACCOUNTS", "nasa"), ("RSS_SOURCES", "xcancel.com")]).is_err()); // no scheme
         assert!(with(&[("X_ACCOUNTS", "nasa"), ("POLL_INTERVAL_SECS", "abc")]).is_err());
         assert!(with(&[("X_ACCOUNTS", "a,b,c"), ("MAX_ACCOUNTS", "2")]).is_err());
@@ -370,8 +348,6 @@ mod tests {
                 ("X_ACCOUNTS", "nasa"),
                 ("POLL_INTERVAL_SECS", "10"),
                 ("RSS_SOURCES", "https://a.example/, http://localhost:8080"),
-                ("GITHUB_TOKEN", "t"),
-                ("GITHUB_REPO", "o/r"),
                 ("RENDER_EXTERNAL_URL", "https://svc.onrender.com/"),
                 ("MEDIA_ONLY", "false"),
                 ("MAX_UPLOAD_BYTES", "999999999"),
@@ -382,7 +358,6 @@ mod tests {
         .unwrap();
         assert_eq!(c.interval.as_secs(), 60); // clamped
         assert_eq!(c.rss_sources, vec!["https://a.example", "http://localhost:8080"]);
-        assert_eq!(c.github.as_ref().unwrap().branch, "bot-state");
         assert_eq!(c.self_ping.as_ref().unwrap().0, "https://svc.onrender.com");
         assert!(!c.media_only);
         assert_eq!(c.max_upload_bytes, 50 * 1024 * 1024); // capped at Telegram's limit
