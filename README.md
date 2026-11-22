@@ -8,7 +8,7 @@ Two sources, usable together:
 
 | | **For you feed** (`FOR_YOU=true`) | **Chosen accounts** (`X_ACCOUNTS=...`) |
 |---|---|---|
-| How | Lightpanda opens `x.com/home` with your login cookies, selects the **For you** tab, scrolls, collects the posts | Free Nitter-style RSS feeds, with fallback instances |
+| How | Lightpanda opens `x.com/home` with your login cookies, selects the **For you** tab, scrolls, collects the posts | Free FxTwitter profile RSS, with Nitter-compatible RSS mirrors as fallbacks |
 | Login needed | Yes (two cookies) | No |
 | Risk | Automating a logged-in session is against X's terms; the account can be limited or suspended | Unofficial but anonymous |
 | Reliability | Depends on X's page layout and on Lightpanda being able to run X's JavaScript | Depends on public instances being up |
@@ -66,7 +66,7 @@ See `.env.example` for everything with defaults. The important ones:
 | `FOR_YOU_CHAT_ID` | Send For you posts to a different channel |
 | `FOR_YOU_MAX_NEW` | Max For-you posts examined per cycle (default 40); posts waiting for `MIN_LIKES` don't count |
 | `X_ACCOUNTS` | `NASA,SpaceX,esa=@otherchannel` |
-| `RSS_SOURCES` | Nitter-style instances, tried in order |
+| `RSS_SOURCES` | RSS URL templates tried in order; use `{handle}` for the X username. A bare Nitter host remains compatible and expands to `/<handle>/rss` |
 | `MEDIA_ONLY`, `INCLUDE_REPLIES`, `INCLUDE_REPOSTS`, `MIN_LIKES`, `MAX_AGE_HOURS` | Filters |
 | `POLL_INTERVAL_SECS` | Default 300, or 600 when `FOR_YOU=true` (minimum 60) |
 | `INSENSITIVE_X` | `true` (default): the browser runs two MIT userscripts on every X page: AgebypassX (Saganaki22; patches X's age-gate / sensitive-warning feature switches) and InsensitiveX (Alican Aktas; strips sensitive flags and tombstones from API answers). Works in Lightpanda and Chromium without any extension |
@@ -100,7 +100,7 @@ CI (`.github/workflows/rust-ci.yml`) downloads the pinned Lightpanda and runs al
 - **For you through a browser is the fragile part.** X can change its page, show a login challenge or captcha (datacenter IPs such as Render's are more likely to get one), or block automated sessions. The scanner depends on stable markers (`article[data-testid="tweet"]`, the timestamp link, the For you tab) and reports a clear error when the page has no timeline, shows a login wall or an error. `check` tells you which one.
 - Lightpanda is a lightweight browser without a rendering engine; X's real front end may not run in it. If `check` says the timeline did not render, run the bot on your own PC or a VPS with `BROWSER_KIND=chromium` (headless Chrome/Chromium, needs about 1 GB RAM, **untested**) or fall back to `X_ACCOUNTS`.
 - Using a logged-in account this way can get it restricted or suspended. Use a spare account.
-- Account mode: public Nitter instances come and go. Add several `RSS_SOURCES` or self-host one (it must serve RSS 2.0 at `/<user>/rss`). Threads: replies are skipped by default, so only a thread's first post is forwarded. FxEmbed gives one video quality.
+- Account mode: FxTwitter provides RSS 2.0 profile feeds at `https://fxtwitter.com/{handle}/feed.xml`; public Nitter-compatible mirrors can be configured as fallbacks with `/<handle>/rss`. These third-party services can change or go offline. Add several `RSS_SOURCES` templates or self-host a compatible RSS service. Threads: replies are skipped by default, so only a thread's first post is forwarded. FxEmbed gives one video quality.
 - Run only one service replica. Multiple replicas writing one local state file can duplicate posts; separate container filesystems do not share state. If the host state file is corrupt or unreadable, startup fails rather than resetting history.
 
 ## Troubleshooting
