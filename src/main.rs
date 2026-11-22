@@ -12,7 +12,7 @@ mod x_browser;
 mod x_source;
 
 use anyhow::{anyhow, Result};
-use config::{Config, GithubSettings};
+use config::Config;
 use reqwest::Client;
 use std::{
     fs::{self, File, OpenOptions},
@@ -189,8 +189,7 @@ async fn run() -> Result<()> {
         }
     });
 
-    let gh: Option<(Client, GithubSettings)> = cfg.github.clone().map(|g| (http.clone(), g));
-    let store = seen_store::SeenStore::open(cfg.state_path.clone(), cfg.seen_cap, gh).await?;
+    let store = seen_store::SeenStore::open(cfg.state_path.clone(), cfg.seen_cap).await?;
 
     if let Some((url, every)) = cfg.self_ping.clone() {
         tokio::spawn(self_ping::run(http.clone(), url, every, token.clone()));
