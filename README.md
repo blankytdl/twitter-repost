@@ -22,7 +22,7 @@ to find post ids. That keeps the page-scraping code tiny.
 > Following tab, shows ads, a login wall and an error page, and checks that your cookies reach the page.
 > Also tested: about 230,000 random inputs thrown at every parser (no panics), recovery after a browser fetch is cancelled mid-flight, and end-to-end flows against fake RSS / FxEmbed / Telegram servers, and the real
 > binary (seeding, delivery, `/health`, graceful shutdown, `check`). **Not tested:** the real x.com (I
-> can't reach it from my sandbox), live Nitter instances, a real Telegram channel, the Docker
+> can't reach it from my sandbox), live public RSS endpoints, a real Telegram channel, the Docker
 > build and host deployment. Whether Lightpanda can run X's real JavaScript is the biggest unknown. Run
 > `x-telegram-bot check` first.
 
@@ -66,7 +66,7 @@ See `.env.example` for everything with defaults. The important ones:
 | `FOR_YOU_CHAT_ID` | Send For you posts to a different channel |
 | `FOR_YOU_MAX_NEW` | Max For-you posts examined per cycle (default 40); posts waiting for `MIN_LIKES` don't count |
 | `X_ACCOUNTS` | `NASA,SpaceX,esa=@otherchannel` |
-| `RSS_SOURCES` | RSS URL templates tried in order; use `{handle}` for the X username. A bare Nitter host remains compatible and expands to `/<handle>/rss` |
+| `RSS_SOURCES` | RSS URL templates tried in order; use `{handle}` for the X username. A bare Nitter host remains compatible and expands to `/<handle>/rss`; the old single XCancel setting is auto-migrated |
 | `MEDIA_ONLY`, `INCLUDE_REPLIES`, `INCLUDE_REPOSTS`, `MIN_LIKES`, `MAX_AGE_HOURS` | Filters |
 | `POLL_INTERVAL_SECS` | Default 300, or 600 when `FOR_YOU=true` (minimum 60) |
 | `INSENSITIVE_X` | `true` (default): the browser runs two MIT userscripts on every X page: AgebypassX (Saganaki22; patches X's age-gate / sensitive-warning feature switches) and InsensitiveX (Alican Aktas; strips sensitive flags and tombstones from API answers). Works in Lightpanda and Chromium without any extension |
