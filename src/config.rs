@@ -216,10 +216,20 @@ impl Config {
 
         let telegram_token = get("TELEGRAM_BOT_TOKEN").ok_or_else(|| anyhow!("TELEGRAM_BOT_TOKEN is required"))?;
 
-        let rss_sources: Vec<String> = list(&s(get, "RSS_SOURCES", "https://xcancel.com"))
+        const DEFAULT_RSS_SOURCES: &str = "https://fxtwitter.com/{handle}/feed.xml,https://xitter.cf/{handle}/rss,https://nitter.gq/{handle}/rss";
+        let configured_rss_sources: Vec<String> = list(&s(get, "RSS_SOURCES", DEFAULT_RSS_SOURCES))
             .into_iter()
             .map(|u| u.trim_end_matches('/').to_string())
             .collect();
+        // XCancel's public service is suspended. Automatically migrate its old single-host
+        // default/configuration so existing host deployments gain a working source and fallbacks.
+        let rss_sources: Vec<String> = if configured_rss_sources.len() == 1
+            && configured_rss_sources[0].eq_ignore_ascii_case("https://xcancel.com")
+        {
+            list(DEFAULT_RSS_SOURCES)
+        } else {
+            configured_rss_sources
+        };
         if rss_sources.is_empty() {
             bail!("RSS_SOURCES is empty");
         }
@@ -314,11 +324,40 @@ mod tests {
         assert_eq!(c.interval.as_secs(), 300);
         assert_eq!(c.cycle_budget.as_secs(), 240);
         assert!(c.media_only && !c.include_replies && c.include_reposts && c.captions);
-        assert_eq!(c.rss_sources, vec!["https://xcancel.com"]);
+        assert_eq!(
+            c.rss_sources,
+            vec![
+                "https://fxtwitter.com/{handle}/feed.xml",
+                "https://xitter.cf/{handle}/rss",
+                "https://nitter.gq/{handle}/rss"
+            ]
+        );
         assert_eq!(c.fx_base, "https://api.fxtwitter.com");
         assert_eq!(c.state_path, PathBuf::from("./data/seen.json"));
         assert!(c.self_ping.is_none() && !c.allow_http_media);
         assert_eq!(c.max_age.as_secs(), 86400);
+    }
+
+    #[test]
+    fn migrates_legacy_xcancel_setting_to_live_fallbacks() {
+        let c = cfg(
+            &[
+                ("TELEGRAM_BOT_TOKEN", "x"),
+                ("DEFAULT_CHAT_ID", "@c"),
+                ("X_ACCOUNTS", "nasa"),
+                ("RSS_SOURCES", "https://xcancel.com/"),
+            ],
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            c.rss_sources,
+            vec![
+                "https://fxtwitter.com/{handle}/feed.xml",
+                "https://xitter.cf/{handle}/rss",
+                "https://nitter.gq/{handle}/rss"
+            ]
+        );
     }
 
     #[test]
