@@ -71,20 +71,20 @@ See `.env.example` for everything with defaults. The important ones:
 | `POLL_INTERVAL_SECS` | Default 300, or 600 when `FOR_YOU=true` (minimum 60) |
 | `INSENSITIVE_X` | `true` (default): the browser runs two MIT userscripts on every X page: AgebypassX (Saganaki22; patches X's age-gate / sensitive-warning feature switches) and InsensitiveX (Alican Aktas; strips sensitive flags and tombstones from API answers). Works in Lightpanda and Chromium without any extension |
 | `BROWSER_KIND`, `BROWSER_BIN` | `lightpanda` (default) or `chromium` |
-| `DATA_DIR`, `STATE_PATH` | Host-mounted persistent directory and optional exact state-file path (default `/data/seen.json` in Docker) |
+| `DATA_DIR`, `STATE_PATH` | Host-mounted persistent directory and optional exact state-file path (default `./data/seen.json` for direct host runs; `/data/seen.json` in Docker) |
 | `LOG_PATH` | Rotating log file path (default `/tmp/xtb-logs/bot.log`); console logging remains enabled |
 
 ## Deploy on a host server
 
 1. Build the included Dockerfile on your host, or deploy the repository as a Docker service.
 2. Set the required environment variables: `TELEGRAM_BOT_TOKEN`, `DEFAULT_CHAT_ID`, and either `X_ACCOUNTS` or `FOR_YOU=true` with `X_AUTH_TOKEN` and `X_CT0`.
-3. Mount a **persistent host volume** at `/data`. The container stores its state at `/data/seen.json`; set `DATA_DIR` or `STATE_PATH` when your host uses a different mount path.
+3. For Docker, mount a **persistent host volume** at `/data`; the container stores its state at `/data/seen.json`. For direct panel launches (such as Altare), the default is the writable relative path `./data/seen.json` under the app directory. Set `DATA_DIR=./data` or `STATE_PATH=./data/seen.json` when needed; do not set either to `/data` unless that path is actually mounted writable.
 4. Keep the service to **one running replica** because the state file is a single-writer store. Add the bot as an admin of each destination channel.
 5. Check `/health` and the service logs. On first boot, existing posts are seeded as seen; later cycles forward new posts.
 
 No GitHub token, state branch, or GitHub API access is needed at runtime. GitHub Actions remains only for source-code tests and builds.
 
-**Important:** a container's writable layer is not persistent storage. Your hosting provider must keep the mounted data directory across redeploys and restarts. Render's Free service does not provide a persistent disk; use a host with persistent storage or attach a persistent volume before relying on history surviving restarts.
+**Important:** the state directory must be writable and persistent. Direct panel deployments normally use `./data` under the app directory; Docker uses `/data` only when a volume is mounted there. Check that the host keeps this directory across restarts and redeploys before relying on history surviving them.
 
 
 ## Testing

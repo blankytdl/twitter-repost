@@ -47,6 +47,7 @@ impl Health {
         }
     }
 
+    #[cfg(test)]
     pub fn beat(&self, planned_wait_secs: u64) {
         self.set_stage("scheduler", planned_wait_secs);
     }
