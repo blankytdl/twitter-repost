@@ -85,28 +85,6 @@ impl SeenStore {
         self.subs.extend(state.subs.into_iter().map(|s| s.to_ascii_lowercase()));
     }
 
-    /// Kept for unit tests and explicit local reloads.
-    pub async fn load_local(&mut self) -> bool {
-        match tokio::fs::read(&self.path).await {
-            Ok(bytes) => match serde_json::from_slice::<State>(&bytes) {
-                Ok(state) => {
-                    self.apply(state);
-                    info!(ids = self.order.len(), path = %self.path.display(), "state loaded from local file");
-                    !self.order.is_empty()
-                }
-                Err(e) => {
-                    warn!("local state file unreadable: {e}");
-                    false
-                }
-            },
-            Err(e) if e.kind() == io::ErrorKind::NotFound => false,
-            Err(e) => {
-                warn!("local state file could not be read: {e}");
-                false
-            }
-        }
-    }
-
     fn insert_inner(&mut self, id: String) -> bool {
         if self.set.contains(&id) {
             return false;
