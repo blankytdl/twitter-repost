@@ -9,12 +9,6 @@ services:
       # Secrets (enter them in the Render dashboard)
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: GITHUB_TOKEN
-        sync: false
-      - key: GITHUB_REPO
-        sync: false
-      - key: GITHUB_STATE_BRANCH
-        value: bot-state
       # What to forward: comma list of X usernames, all sent to DEFAULT_CHAT_ID unless written as name=@otherchat
       - key: DEFAULT_CHAT_ID
         sync: false
@@ -37,5 +31,9 @@ services:
         value: "true"
       - key: SELF_PING_INTERVAL_SECS
         value: "600"
+      - key: DATA_DIR
+        value: /data
+      - key: STATE_PATH
+        value: /data/seen.json
       - key: LOG_PATH
         value: /tmp/xtb-logs/bot.log
