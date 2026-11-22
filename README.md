@@ -1,8 +1,8 @@
-# X → Telegram bot (Rust, free, Render Free)
+# X → Telegram bot (Rust, host-server deployment)
 
 Forwards X (Twitter) posts to a Telegram channel with native photos, albums, videos and GIFs. **No
 paid X API.** It is built from your `reddit-to-telegram` bot and reuses its Lightpanda browser
-client, Telegram uploader, GitHub state branch, `/health` endpoint, self-ping and Render setup.
+client, Telegram uploader, host-mounted state storage, `/health` endpoint and self-ping.
 
 Two sources, usable together:
 
@@ -16,21 +16,21 @@ Two sources, usable together:
 In both cases each post's text, likes and media come from the free FxEmbed API, so the browser part only has
 to find post ids. That keeps the page-scraping code tiny.
 
-> **Status: tested against a fake X, never against the real one.** 66 automated tests pass, including
+> **Status: tested against a fake X, never against the real one.** The existing automated suite covers
 > ones that drive the **real Lightpanda 1.0.3** against a fake x.com page that renders its timeline with
 > JavaScript after a delay, swaps the list while scrolling (like X's virtualised timeline), opens on the
 > Following tab, shows ads, a login wall and an error page, and checks that your cookies reach the page.
-> Also tested: about 230,000 random inputs thrown at every parser (no panics), recovery after a browser fetch is cancelled mid-flight, and end-to-end flows against fake RSS / FxEmbed / Telegram / GitHub servers, and the real
+> Also tested: about 230,000 random inputs thrown at every parser (no panics), recovery after a browser fetch is cancelled mid-flight, and end-to-end flows against fake RSS / FxEmbed / Telegram servers, and the real
 > binary (seeding, delivery, `/health`, graceful shutdown, `check`). **Not tested:** the real x.com (I
-> can't reach it from my sandbox), live Nitter instances, a real Telegram channel, GitHub, the Docker
-> build and Render. Whether Lightpanda can run X's real JavaScript is the biggest unknown. Run
+> can't reach it from my sandbox), live Nitter instances, a real Telegram channel, the Docker
+> build and host deployment. Whether Lightpanda can run X's real JavaScript is the biggest unknown. Run
 > `x-telegram-bot check` first.
 
 ## Getting your cookies (For you feed)
 1. Log in to x.com in a normal browser with the account whose **For you** feed you want (use a spare account).
 2. Open developer tools → *Application* (Chrome) or *Storage* (Firefox) → *Cookies* → `https://x.com`.
 3. Copy the **values** of `auth_token` and `ct0` into `X_AUTH_TOKEN` and `X_CT0`.
-4. Treat them like a password: only put them in Render's secret environment variables, never in git.
+4. Treat them like a password: only put them in your host's secret environment variables, never in git.
    Logging out or changing the password invalidates them; then `check` shows the login-page error.
 
 ## Quick start
@@ -53,7 +53,7 @@ Locally you also need the Lightpanda binary (`BROWSER_BIN`); the Docker image in
 - The "seen" memory is sized automatically so it always covers the age window (an evicted id would otherwise be re-sent); `SEEN_CAP` can only raise it.
 - Structured logs are written to the service console and a separate `LOG_PATH` file. The file rotates at 5 MiB and retains one previous log; the default is `/tmp/xtb-logs/bot.log`.
 - `/health` reports the current stage (fetching an RSS feed, reading For you, fetching a post, sending media, saving state or waiting for the next poll). During idle periods the scheduler emits a 60-second countdown heartbeat without making extra X/RSS requests.
-- Remembers what it sent (per channel) in a local file plus a backup on a GitHub branch. Failures are sorted into two kinds. *Temporary* ones (network errors, 5xx, Telegram flood limits / 429, FxEmbed outages) keep the order, stop the cycle for that source and are retried for up to 10 cycles, so an outage doesn't lose posts. *Permanent* ones (Telegram 4xx, a 404 media file) don't hold up the other posts and are given up after 3 cycles.
+- Remembers what it sent (per channel) in a JSON file on the host-mounted data directory. Writes use a temporary file and atomic rename; an unreadable existing state file stops startup instead of silently resetting deduplication. Failures are sorted into two kinds. *Temporary* ones (network errors, 5xx, Telegram flood limits / 429, FxEmbed outages) keep the order, stop the cycle for that source and are retried for up to 10 cycles, so an outage doesn't lose posts. *Permanent* ones (Telegram 4xx, a 404 media file) don't hold up the other posts and are given up after 3 cycles.
 - If every account feed fails (RSS instances down or blocking) it backs off 5 min, doubling up to 1 h. The For-you source backs off on its own the same way after a login wall, X error or timeout, so a bad cookie is not retried every cycle and the account feeds are not slowed down. Both recover by themselves.
 
 ## Settings
@@ -71,16 +71,21 @@ See `.env.example` for everything with defaults. The important ones:
 | `POLL_INTERVAL_SECS` | Default 300, or 600 when `FOR_YOU=true` (minimum 60) |
 | `INSENSITIVE_X` | `true` (default): the browser runs two MIT userscripts on every X page: AgebypassX (Saganaki22; patches X's age-gate / sensitive-warning feature switches) and InsensitiveX (Alican Aktas; strips sensitive flags and tombstones from API answers). Works in Lightpanda and Chromium without any extension |
 | `BROWSER_KIND`, `BROWSER_BIN` | `lightpanda` (default) or `chromium` |
-| `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_STATE_BRANCH` | Durable state backup (recommended on Render Free) |
+| `DATA_DIR`, `STATE_PATH` | Host-mounted persistent directory and optional exact state-file path (default `/data/seen.json` in Docker) |
 | `LOG_PATH` | Rotating log file path (default `/tmp/xtb-logs/bot.log`); console logging remains enabled |
 
-## Deploy on Render (free)
-1. Put this folder in a GitHub repo (it contains `Dockerfile` and `render.yaml`).
-2. Create a GitHub fine-grained token with **Contents: read/write** on one repo. The bot creates the `bot-state` branch itself.
-3. Render → New → Blueprint (uses `render.yaml`), or a Docker web service. Enter the secrets: `TELEGRAM_BOT_TOKEN`, `GITHUB_TOKEN`, `GITHUB_REPO`, `DEFAULT_CHAT_ID`, and `X_ACCOUNTS` and/or (`FOR_YOU=true`, `X_AUTH_TOKEN`, `X_CT0`).
-4. Add your bot as an admin of each target channel.
-5. Watch the logs for `first run: existing posts marked seen`, then for new posts on later cycles.
-6. **Keep it awake:** Render Free stops a service after ~15 minutes without inbound requests, and the self-ping can't wake a stopped service. Add a free external uptime monitor (for example UptimeRobot) that requests `https://<your-service>.onrender.com/health` every 5 minutes. 750 free hours per month covers one always-on service.
+## Deploy on a host server
+
+1. Build the included Dockerfile on your host, or deploy the repository as a Docker service.
+2. Set the required environment variables: `TELEGRAM_BOT_TOKEN`, `DEFAULT_CHAT_ID`, and either `X_ACCOUNTS` or `FOR_YOU=true` with `X_AUTH_TOKEN` and `X_CT0`.
+3. Mount a **persistent host volume** at `/data`. The container stores its state at `/data/seen.json`; set `DATA_DIR` or `STATE_PATH` when your host uses a different mount path.
+4. Keep the service to **one running replica** because the state file is a single-writer store. Add the bot as an admin of each destination channel.
+5. Check `/health` and the service logs. On first boot, existing posts are seeded as seen; later cycles forward new posts.
+
+No GitHub token, state branch, or GitHub API access is needed at runtime. GitHub Actions remains only for source-code tests and builds.
+
+**Important:** a container's writable layer is not persistent storage. Your hosting provider must keep the mounted data directory across redeploys and restarts. Render's Free service does not provide a persistent disk; use a host with persistent storage or attach a persistent volume before relying on history surviving restarts.
+
 
 ## Testing
 ```
@@ -91,13 +96,12 @@ scripts/verify.sh                         # tests + release build + live check i
 CI (`.github/workflows/rust-ci.yml`) downloads the pinned Lightpanda and runs all of them.
 
 ## Honest limitations
-- **GitHub state history grows.** The state file is pushed after every cycle that changed it, and each push is a commit (a few hundred KB, mostly compressible). Use a dedicated private repo for `GITHUB_REPO`, raise `STATE_FLUSH_MIN_SECS` (e.g. 1800) to push less often (a crash can then re-send up to that much recent history), and squash or recreate the `bot-state` branch now and then.
+- **Host storage must be persistent.** If `/data` is not mounted to persistent storage, a redeploy or restart can lose the seen-post history and cause old posts to be reconsidered. A crash between sending a post and the next state flush can also re-send a small number of posts.
 - **For you through a browser is the fragile part.** X can change its page, show a login challenge or captcha (datacenter IPs such as Render's are more likely to get one), or block automated sessions. The scanner depends on stable markers (`article[data-testid="tweet"]`, the timestamp link, the For you tab) and reports a clear error when the page has no timeline, shows a login wall or an error. `check` tells you which one.
 - Lightpanda is a lightweight browser without a rendering engine; X's real front end may not run in it. If `check` says the timeline did not render, run the bot on your own PC or a VPS with `BROWSER_KIND=chromium` (headless Chrome/Chromium, needs about 1 GB RAM, **untested**) or fall back to `X_ACCOUNTS`.
 - Using a logged-in account this way can get it restricted or suspended. Use a spare account.
 - Account mode: public Nitter instances come and go. Add several `RSS_SOURCES` or self-host one (it must serve RSS 2.0 at `/<user>/rss`). Threads: replies are skipped by default, so only a thread's first post is forwarded. FxEmbed gives one video quality.
-- Render deploys can briefly run two instances; with one shared state branch that can cause a duplicate or a last-write-wins overwrite. The disk is wiped on restart, so only the GitHub branch survives (state files over GitHub's 1 MB JSON limit are restored via the raw download). A crash between sending and the next state flush can re-send a few posts.
-- If GitHub is configured and the state can't be restored after 5 tries, the bot exits instead of starting with empty history (prevents a duplicate flood). Render restarts it.
+- Run only one service replica. Multiple replicas writing one local state file can duplicate posts; separate container filesystems do not share state. If the host state file is corrupt or unreadable, startup fails rather than resetting history.
 
 ## Troubleshooting
 | Message | Meaning |
@@ -109,9 +113,9 @@ CI (`.github/workflows/rust-ci.yml`) downloads the pinned Lightpanda and runs al
 | `cannot start browser` | `BROWSER_BIN` path is wrong |
 | `all RSS sources failed` | Add more `RSS_SOURCES` or self-host |
 | `telegram error 400: chat not found` | Wrong chat id, or the bot isn't a channel admin |
-| Stops posting after a while | Render spun it down: add the external uptime monitor |
+| Stops posting after a while | Check host logs, polling errors and whether the host stopped or restarted the service |
 
 ## Layout
 `x_browser.rs` (Lightpanda/CDP client and For-you scanner), `x_source.rs` (RSS + FxEmbed), `deliver.rs` (captions, photos, albums, videos),
-`scheduler.rs` (cycles, retries, filters and idle heartbeats), `config.rs`, `seen_store.rs` (state + GitHub backup), `telegram.rs`, `media_downloader.rs`,
+`scheduler.rs` (cycles, retries, filters and idle heartbeats), `config.rs`, `seen_store.rs` (host-local state), `telegram.rs`, `media_downloader.rs`,
 `health.rs` (`/health` stage and stall status), `self_ping.rs`, `testutil.rs` (fake servers and fake x.com for tests).

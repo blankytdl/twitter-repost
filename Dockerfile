@@ -22,11 +22,15 @@ RUN curl -fsSL -o /usr/local/bin/lightpanda \
  && chmod +x /usr/local/bin/lightpanda
 
 COPY --from=build /src/target/release/x-telegram-bot /usr/local/bin/x-telegram-bot
-RUN useradd -r -m bot
+RUN useradd -r -m bot \
+ && mkdir -p /data \
+ && chown -R bot:bot /data
+VOLUME ["/data"]
 USER bot
 ENV BROWSER_BIN=/usr/local/bin/lightpanda \
     LIGHTPANDA_DISABLE_TELEMETRY=true \
-    STATE_PATH=/tmp/xtb-state/seen.json \
+    DATA_DIR=/data \
+    STATE_PATH=/data/seen.json \
     LOG_PATH=/tmp/xtb-logs/bot.log \
     RUST_LOG=info
 CMD ["x-telegram-bot"]
