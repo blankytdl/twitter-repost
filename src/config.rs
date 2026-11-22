@@ -216,7 +216,7 @@ impl Config {
 
         let telegram_token = get("TELEGRAM_BOT_TOKEN").ok_or_else(|| anyhow!("TELEGRAM_BOT_TOKEN is required"))?;
 
-        let rss_sources: Vec<String> = list(&s(get, "RSS_SOURCES", "https://xcancel.com"))
+        let rss_sources: Vec<String> = list(&s(get, "RSS_SOURCES", "https://fxtwitter.com/{handle}/feed.xml"))
             .into_iter()
             .map(|u| u.trim_end_matches('/').to_string())
             .collect();
@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(c.interval.as_secs(), 300);
         assert_eq!(c.cycle_budget.as_secs(), 240);
         assert!(c.media_only && !c.include_replies && c.include_reposts && c.captions);
-        assert_eq!(c.rss_sources, vec!["https://xcancel.com"]);
+        assert_eq!(c.rss_sources, vec!["https://fxtwitter.com/{handle}/feed.xml"]);
         assert_eq!(c.fx_base, "https://api.fxtwitter.com");
         assert_eq!(c.state_path, PathBuf::from("./data/seen.json"));
         assert!(c.self_ping.is_none() && !c.allow_http_media);
