@@ -1,4 +1,4 @@
-//! Test-only fake of every outside service (RSS instances, FxEmbed, media CDN, Telegram, GitHub),
+//! Test-only fake of every outside service used by the bot (RSS instances, FxEmbed, media CDN, Telegram),
 //! served from one local HTTP server so the real HTTP code paths are exercised.
 use crate::config::Config;
 use axum::{
@@ -8,14 +8,10 @@ use axum::{
     response::Response,
     Router,
 };
-use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
 };
 
 type Rule = Box<dyn Fn(&str, &str) -> Option<(u16, &'static str)> + Send + Sync>;
@@ -31,13 +27,6 @@ pub struct Mock {
     /// (telegram method, request body as lossy text)
     pub tg: Mutex<Vec<(String, String)>>,
     pub tg_rules: Mutex<Vec<Rule>>,
-    pub gh_file: Mutex<Option<(String, Vec<u8>)>>,
-    pub gh_branch: AtomicBool,
-    pub gh_puts: AtomicUsize,
-    pub gh_gets: AtomicUsize,
-    pub gh_fail_get: AtomicBool,
-    /// Mimic GitHub's >1 MB behaviour: the JSON answer has no content, the raw Accept header returns the bytes
-    pub gh_big: AtomicBool,
     pub requests: Mutex<Vec<String>>,
     /// HTML pages by path (e.g. "/home"): a fake x.com
     pub pages: Mutex<HashMap<String, String>>,
@@ -130,48 +119,7 @@ async fn handler(State(m): State<Arc<Mock>>, method: Method, uri: Uri, headers: 
             }
             json_reply(200, json!({"ok":true,"result":{"username":"testbot"}}))
         }
-        ["repos", ..] => github(&m, &method, &path, &headers, &body),
         _ => reply(404, "text/plain", b"unknown".to_vec()),
-    }
-}
-
-fn github(m: &Mock, method: &Method, path: &str, headers: &HeaderMap, body: &Bytes) -> Response {
-    match (method.as_str(), path) {
-        ("GET", "/repos/o/r/contents/seen_posts.json") => {
-            m.gh_gets.fetch_add(1, Ordering::SeqCst);
-            if m.gh_fail_get.load(Ordering::SeqCst) {
-                return reply(500, "text/plain", b"boom".to_vec());
-            }
-            let wants_raw = headers.get_all(header::ACCEPT).iter().any(|v| v.to_str().unwrap_or("").contains("raw"));
-            match &*m.gh_file.lock().unwrap() {
-                Some((_, bytes)) if m.gh_big.load(Ordering::SeqCst) && wants_raw => reply(200, "application/octet-stream", bytes.clone()),
-                Some((sha, bytes)) if m.gh_big.load(Ordering::SeqCst) => json_reply(200, json!({"sha": sha, "size": bytes.len(), "encoding": "none", "content": ""})),
-                Some((sha, bytes)) => json_reply(200, json!({"sha": sha, "content": STANDARD.encode(bytes)})),
-                None => json_reply(404, json!({"message":"Not Found"})),
-            }
-        }
-        ("GET", "/repos/o/r/git/ref/heads/bot-state") => {
-            if m.gh_branch.load(Ordering::SeqCst) {
-                json_reply(200, json!({"object":{"sha":"x"}}))
-            } else {
-                json_reply(404, json!({}))
-            }
-        }
-        ("GET", "/repos/o/r") => json_reply(200, json!({"default_branch":"main"})),
-        ("GET", "/repos/o/r/git/ref/heads/main") => json_reply(200, json!({"object":{"sha":"abc"}})),
-        ("POST", "/repos/o/r/git/refs") => {
-            m.gh_branch.store(true, Ordering::SeqCst);
-            json_reply(201, json!({}))
-        }
-        ("PUT", "/repos/o/r/contents/seen_posts.json") => {
-            let v: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
-            let bytes = STANDARD.decode(v["content"].as_str().unwrap_or("")).unwrap_or_default();
-            let n = m.gh_puts.fetch_add(1, Ordering::SeqCst) + 1;
-            let sha = format!("sha{n}");
-            *m.gh_file.lock().unwrap() = Some((sha.clone(), bytes));
-            json_reply(200, json!({"content":{"sha": sha}}))
-        }
-        _ => reply(404, "text/plain", b"unknown repo route".to_vec()),
     }
 }
 
