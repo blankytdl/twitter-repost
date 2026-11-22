@@ -262,7 +262,7 @@ impl Config {
             user_agent: s(get, "USER_AGENT", DEFAULT_UA),
             telegram_token,
             telegram_base: s(get, "TELEGRAM_API_BASE", "https://api.telegram.org").trim_end_matches('/').to_string(),
-            state_path: get("STATE_PATH").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(s(get, "DATA_DIR", "/data")).join("seen.json")),
+            state_path: get("STATE_PATH").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(s(get, "DATA_DIR", "./data")).join("seen.json")),
             port: num(get, "PORT", 10000u16)?,
             self_ping,
             max_upload_bytes: num(get, "MAX_UPLOAD_BYTES", 50u64 * 1024 * 1024)?.min(50 * 1024 * 1024),
@@ -316,6 +316,7 @@ mod tests {
         assert!(c.media_only && !c.include_replies && c.include_reposts && c.captions);
         assert_eq!(c.rss_sources, vec!["https://xcancel.com"]);
         assert_eq!(c.fx_base, "https://api.fxtwitter.com");
+        assert_eq!(c.state_path, PathBuf::from("./data/seen.json"));
         assert!(c.self_ping.is_none() && !c.allow_http_media);
         assert_eq!(c.max_age.as_secs(), 86400);
     }
