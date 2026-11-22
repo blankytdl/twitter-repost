@@ -8,8 +8,6 @@ use crate::{
 };
 use reqwest::Client;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-#[cfg(test)]
-use std::sync::atomic::Ordering;
 use tokio::time::{sleep, timeout, Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -381,7 +379,7 @@ mod tests {
     async fn build(m: &Arc<Mock>, state: &PathBuf, extra: &[(&str, &str)]) -> Scheduler {
         let cfg = Arc::new(config(m, state, extra));
         let http = Client::builder().user_agent("test").build().unwrap();
-        let store = SeenStore::open(cfg.state_path.clone(), cfg.seen_cap, None).await.unwrap();
+        let store = SeenStore::open(cfg.state_path.clone(), cfg.seen_cap).await.unwrap();
         let tg = Telegram::new(http.clone(), cfg.telegram_base.clone(), cfg.telegram_token.clone());
         let d = Deliverer::new(cfg.clone(), http.clone(), tg);
         Scheduler::new(cfg, http, store, d, Arc::new(Health::new()), CancellationToken::new())
@@ -757,34 +755,6 @@ mod tests {
         let _ = std::fs::remove_file(&e.state);
     }
 
-    #[tokio::test]
-    async fn github_state_backup_and_restore() {
-        let m = testutil::start().await;
-        let gh = |m: &Mock| crate::config::GithubSettings { token: "tok".into(), repo: "o/r".into(), branch: "bot-state".into(), api_base: m.url("") };
-        let client = Client::new();
-        let path = tmp("gh");
-        let mut s = SeenStore::open(path.clone(), 100, Some((client.clone(), gh(&m)))).await.unwrap();
-        assert_eq!(m.gh_puts.load(Ordering::SeqCst), 0);
-        s.insert("@chan|111");
-        s.mark_sub(&sub_key("@chan", "nasa"));
-        s.flush().await;
-        assert_eq!(m.gh_puts.load(Ordering::SeqCst), 1, "state pushed to GitHub (branch created on demand)");
-        assert!(m.gh_branch.load(Ordering::SeqCst));
-        drop(s);
-
-        let _ = std::fs::remove_file(&path); // new instance: empty disk, state only on GitHub
-        let s2 = SeenStore::open(path.clone(), 100, Some((client.clone(), gh(&m)))).await.unwrap();
-        assert!(s2.contains("@chan|111") && s2.sub_known("@chan", "nasa"), "restored from GitHub");
-
-        // GitHub down at startup: refuse to start with empty history (prevents a duplicate flood)
-        m.gh_fail_get.store(true, Ordering::SeqCst);
-        let gets_before = m.gh_gets.load(Ordering::SeqCst);
-        let r = tokio::time::timeout(Duration::from_secs(60), SeenStore::open(tmp("gh2"), 100, Some((client, gh(&m))))).await.unwrap();
-        assert!(r.is_err());
-        assert_eq!(m.gh_gets.load(Ordering::SeqCst) - gets_before, 5, "five restore attempts");
-        let _ = std::fs::remove_file(&path);
-    }
-
     // ------------------------------------------------------------------ For you (real browser)
 
     /// These tests drive the real Lightpanda binary. They run when LIGHTPANDA_BIN points at it
@@ -1122,24 +1092,6 @@ mod tests {
         assert_eq!(m.total_tg(), 0, "old For-you posts are skipped even when reposted");
         assert!(e.sched.store.contains(&seen_key("@fy", &anc2)));
         let _ = std::fs::remove_file(&e.state);
-    }
-
-    #[tokio::test]
-    async fn state_file_over_github_contents_api_size_limit_is_restored() {
-        // GitHub's contents API returns an empty body (encoding "none") for files over 1 MB.
-        let m = testutil::start().await;
-        let ids: Vec<String> = (0..40000).map(|i| format!("@somechannel|{}", 2_000_000_000_000_000_000u64 + i)).collect();
-        let body = serde_json::json!({"ids": ids, "subs": ["@somechannel|nasa"]}).to_string();
-        assert!(body.len() > 1_048_576, "test file must exceed 1 MB");
-        *m.gh_file.lock().unwrap() = Some(("shaBIG".to_string(), body.into_bytes()));
-        m.gh_big.store(true, Ordering::SeqCst);
-        m.gh_branch.store(true, Ordering::SeqCst);
-        let gh = crate::config::GithubSettings { token: "tok".into(), repo: "o/r".into(), branch: "bot-state".into(), api_base: m.url("") };
-        let path = tmp("big");
-        let s = SeenStore::open(path.clone(), 50000, Some((Client::new(), gh))).await.unwrap();
-        assert!(s.contains("@somechannel|2000000000000000000") && s.contains("@somechannel|2000000000000039999"), "all ids restored from the raw download");
-        assert!(s.sub_known("@somechannel", "nasa"));
-        let _ = std::fs::remove_file(&path);
     }
 
     // ------------------------------------------------------------------ regressions, review round 3
