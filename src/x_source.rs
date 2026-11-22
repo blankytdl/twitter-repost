@@ -127,6 +127,17 @@ fn feed_url(source: &str, account: &str) -> String {
     }
 }
 
+/// FxTwitter's RSS item title is the post text, not Nitter's "RT by @user" marker.
+/// A profile feed item authored by a different handle is therefore treated as a repost
+/// by the profile being polled. Explicit Nitter reposter labels always take precedence.
+fn infer_profile_reposters(items: &mut [FeedItem], account: &str) {
+    for item in items {
+        if item.reposter.is_none() && !item.handle.eq_ignore_ascii_case(account) {
+            item.reposter = Some(format!("@{account}"));
+        }
+    }
+}
+
 /// RSS sources in priority order; the one that worked last is tried first.
 pub struct Sources {
     client: Client,
@@ -162,7 +173,8 @@ impl Sources {
             match self.try_one(&url).await {
                 // Blocked or rate-limited instances often answer with an empty feed: ask the next one too.
                 Ok(items) if items.is_empty() => empty_ok = true,
-                Ok(items) => {
+                Ok(mut items) => {
+                    infer_profile_reposters(&mut items, account);
                     if pos != 0 {
                         let b = self.bases.remove(pos); // remember what works
                         self.bases.insert(0, b);
@@ -350,6 +362,19 @@ mod tests {
                 FeedItem { handle: "web".into(), id: "333".into(), reposter: None },
             ]
         );
+    }
+
+    #[test]
+    fn infers_profile_reposts_from_the_original_author_link() {
+        let mut items = vec![
+            FeedItem { handle: "OtherAuthor".into(), id: "1".into(), reposter: None },
+            FeedItem { handle: "NASA".into(), id: "2".into(), reposter: None },
+            FeedItem { handle: "someone".into(), id: "3".into(), reposter: Some("@NitterLabel".into()) },
+        ];
+        infer_profile_reposters(&mut items, "nasa");
+        assert_eq!(items[0].reposter.as_deref(), Some("@nasa"));
+        assert_eq!(items[1].reposter, None);
+        assert_eq!(items[2].reposter.as_deref(), Some("@NitterLabel"));
     }
 
     #[test]
